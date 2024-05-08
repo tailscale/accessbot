@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "TPQSV7ZK4": {
+      "app_id": "A06UZ165AT0",
+      "IsDev": false,
+      "team_domain": "tailscale",
+      "team_id": "TPQSV7ZK4"
+    }
+  },
+  "default": "tailscale"
+}

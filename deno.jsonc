@@ -1,0 +1,9 @@
+{
+  "$schema": "https://deno.land/x/deno/cli/schemas/config-file.v1.json",
+  "importMap": "import_map.json",
+  "lock": false,
+  "exclude": [".*"],
+  "tasks": {
+    "test": "deno fmt --check && deno lint && deno test --allow-read --allow-none"
+  }
+}
