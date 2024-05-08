@@ -6,6 +6,11 @@ request (with details) that is routed to another user to approve or deny.
 When approved, the workflow will assign a custom device posture attribute to the
 requester's device.
 
+> [!NOTE]
+> This experiment is in its early days and requires a feature flag be enabled on
+> your account before you can make use of it. Please contact us if you'd like to
+> test it - we're eager to hear your feedback.
+
 ## Setup
 
 Before getting started, first make sure you have a development workspace where
