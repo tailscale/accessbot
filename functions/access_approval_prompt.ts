@@ -202,7 +202,7 @@ async function approve(
     const r = await tailscale(env, client)(
       `https://api.tailscale.com/api/v2/device/${
         encodeURIComponent(device.nodeId)
-      }/attributes/${encodeURIComponent(profile.attribute)}`,
+      }/attributes/${profile.attribute}`,
       {
         method: "POST",
         body: JSON.stringify({
