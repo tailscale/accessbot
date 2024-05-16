@@ -1,41 +1,28 @@
 export const config: Config = {
   profiles: [
     {
-      description: "Accessbot Test",
-      attribute: "custom:accessbotTester",
+      // You can use this example config to test approvals with your own user.
+      //
+      // If you enter your own user as the approver, you will still be asked to
+      // to approve it, which is not the default behaviour.
+      description: "Accessbot Test: Review",
+      attribute: "custom:accessbotTestReview",
       canSelfApprove: true,
       confirmSelfApproval: true,
     },
     {
-      attribute: "custom:prodAccess",
-      description: "Production",
-      notifyChannel: "C06TH49GKHC",
+      attribute: "custom:accessbotTest",
+      description: "Accessbot Test: Select Users",
       canSelfApprove: true,
       approverEmails: [
-        "paul@tailscale.com",
-        "anton@tailscale.com",
-        "kristoffer@tailscale.com",
-        "apenwarr@tailscale.com",
-        "bradfitz@tailscale.com",
-        "unknown@tailscale.com",
+        // Enter some email addresses here.
+        "someone@example.com",
       ],
-    },
-    {
-      attribute: "custom:stagingAccess",
-      description: "Staging",
-      notifyChannel: "C06TH49GKHC",
-      canSelfApprove: true,
-    },
-    {
-      attribute: "custom:bust",
-      description: "Only unrecognised reviewers",
-      notifyChannel: "C06TH49GKHC",
-      canSelfApprove: false,
-      approverEmails: [
-        "unknown@tailscale.com",
-        "nobody@tailscale.com",
-        "dgentry@tailscale.com", // :(
-      ],
+      // You can send announcements of approvals to a Slack channel.
+      // Navigate to the channel in Slack, then click the channel name above the
+      // chat and in the window that opens, select the About tab. The channel ID
+      // is available at the bottom of this window.
+      // notifyChannel: "C06TH49GKHC",
     },
   ],
 };
