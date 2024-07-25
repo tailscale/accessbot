@@ -175,7 +175,8 @@ async function approve(
             }|${access.device.name || access.device.nodeId}>` +
             `${reason ? ` for "${reason}"` : ""} was ${
               approved ? " :white_check_mark: Approved" : ":x: Denied"
-            } by <@${approver.userId}>`,
+            } by <@${approver.userId}> until ` +
+            new Date(Date.now() + durationSeconds * 1000).toISOString(),
         },
       ],
     }],
