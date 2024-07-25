@@ -513,9 +513,41 @@ async function buildView(
 async function buildApproverBlock(
   client: SlackAPIClient,
   userId?: string,
-  showSelf?: boolean,
+  canSelfApprove?: boolean,
   emails?: string[],
 ) {
+  if (!emails?.length && canSelfApprove) {
+    return {
+      block_id: "approver",
+      type: "input",
+      label: {
+        type: "plain_text",
+        emoji: true,
+        text: ":sleuth_or_spy: Who should approve?",
+      },
+      element: {
+        action_id: ACTION_APPROVER,
+        type: "radio_buttons",
+        initial_option: {
+          value: userId,
+          text: {
+            type: "plain_text",
+            text: "No approval neeeded",
+          },
+        },
+        options: [
+          {
+            value: userId,
+            text: {
+              type: "plain_text",
+              text: "No approval neeeded",
+            },
+          },
+        ],
+      },
+    };
+  }
+
   if (!emails?.length || emails.length > 10) {
     // We can't use radio buttons for this.
     return {
@@ -547,7 +579,7 @@ async function buildApproverBlock(
   // Filter the list of approvers to successful responses.
   const approvers = users.filter((u) =>
     u.ok && u.user && !u.user.deleted &&
-    (showSelf || emails.length == 1 || u.user.id != userId)
+    (canSelfApprove || emails.length == 1 || u.user.id != userId)
   );
 
   // Warn about any users who could not be found by email.
