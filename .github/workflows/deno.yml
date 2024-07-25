@@ -30,4 +30,4 @@ jobs:
         run: deno task test
 
       - name: Run type check
-        run: deno check *.ts && deno check **/*.ts && deno check **/**/*.ts
+        run: deno check *.ts && deno check **/*.ts
