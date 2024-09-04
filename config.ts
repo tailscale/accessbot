@@ -47,6 +47,11 @@ export type Profile = {
   attribute: string;
 
   /**
+   * A string attribute value that will be set. Default is to use a boolean true value.
+   */
+  attributeValueString?: string;
+
+  /**
    * The maximum duration to offer the user when they are requesting access to
    * this profile.
    * @default undefined (meaning offer all preset durations to the user)

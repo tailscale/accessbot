@@ -10,6 +10,9 @@ export const ProfileType = DefineType({
     attribute: {
       type: Schema.types.string,
     },
+    attributeValueString: {
+      type: Schema.types.string,
+    },
     description: {
       type: Schema.types.string,
     },

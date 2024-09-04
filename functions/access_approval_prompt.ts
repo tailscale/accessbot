@@ -207,7 +207,7 @@ async function approve(
       {
         method: "POST",
         body: JSON.stringify({
-          value: true,
+          value: profile.attributeValueString || true,
           expiry: new Date(Date.now() + durationSeconds * 1000).toISOString(),
           comment:
             `Tailscale Access Slackbot: request from ${
