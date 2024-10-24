@@ -500,6 +500,10 @@ async function buildView(
         element: {
           action_id: ACTION_REASON,
           type: "plain_text_input",
+          // 80 is arbitrary here. If the final comment (that also includes
+          // requester and approver names) comes over the API limit of 200
+          // characters, we'll truncate it before sending the request.
+          max_length: 80,
           placeholder: {
             type: "plain_text",
             text: "Enter reason...",
