@@ -200,6 +200,14 @@ async function approve(
 
   // Update Tailscale with the new attr request.
   if (approved) {
+    let comment =
+      `Tailscale Access Slackbot: request from ${
+        userref(await requesterRes)
+      } approved by ${userref(await approverRes)}` +
+      (reason ? `\nReason: ${reason}` : "");
+    if (comment.length > 200) {
+      comment = comment.slice(0, 200);
+    }
     const r = await tailscale(env, client)(
       `https://api.tailscale.com/api/v2/device/${
         encodeURIComponent(device.nodeId)
@@ -209,11 +217,7 @@ async function approve(
         body: JSON.stringify({
           value: true,
           expiry: new Date(Date.now() + durationSeconds * 1000).toISOString(),
-          comment:
-            `Tailscale Access Slackbot: request from ${
-              userref(await requesterRes)
-            } approved by ${userref(await approverRes)}` +
-            (reason ? `\nReason: ${reason}` : ""),
+          comment: comment,
         }),
       },
     );
