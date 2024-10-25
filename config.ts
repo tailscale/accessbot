@@ -14,6 +14,7 @@ export const config: Config = {
       attribute: "custom:accessbotTest",
       description: "Accessbot Test: Select Users",
       canSelfApprove: true,
+      maxSeconds: 3 * 86400, // 3 days.
       approverEmails: [
         // Enter some email addresses here.
         "someone@example.com",
@@ -49,7 +50,7 @@ export type Profile = {
   /**
    * The maximum duration to offer the user when they are requesting access to
    * this profile.
-   * @default undefined (meaning offer all preset durations to the user)
+   * @default 86400 (1 day, can be increased to 7*86400 for 7 days)
    */
   maxSeconds?: number;
   /**
