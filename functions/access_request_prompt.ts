@@ -361,7 +361,8 @@ function formState(state: any): FormState {
 }
 
 const minuteSecs = 60;
-const hourSecs = 60 * 60;
+const hourSecs = 60 * minuteSecs;
+const daySecs = 24 * hourSecs;
 
 export const presetDurations = [
   { text: "5 minutes", seconds: 5 * minuteSecs },
@@ -370,7 +371,13 @@ export const presetDurations = [
   { text: "4 hours", seconds: 4 * hourSecs },
   { text: "8 hours", seconds: 8 * hourSecs },
   { text: "12 hours", seconds: 12 * hourSecs },
-  { text: "24 hours", seconds: 24 * hourSecs },
+  { text: "24 hours", seconds: 1 * daySecs },
+  { text: "2 days", seconds: 2 * daySecs },
+  { text: "3 days", seconds: 3 * daySecs },
+  { text: "4 days", seconds: 4 * daySecs },
+  { text: "5 days", seconds: 5 * daySecs },
+  { text: "6 days", seconds: 6 * daySecs },
+  { text: "7 days", seconds: 7 * daySecs },
 ];
 
 async function buildView(
@@ -394,14 +401,13 @@ async function buildView(
     },
   }));
 
-  let durations = presetDurations;
-  if (profile && profile.maxSeconds) {
-    durations = durations.filter((d) => d.seconds <= profile.maxSeconds!);
-  }
-  const durationOpts = durations.map((d) => ({
-    text: { type: "plain_text", text: d.text },
-    value: d.seconds.toFixed(0),
-  }));
+  const maxSeconds = profile?.maxSeconds || daySecs;
+  const durationOpts = presetDurations
+    .filter((d) => d.seconds <= maxSeconds)
+    .map((d) => ({
+      text: { type: "plain_text", text: d.text },
+      value: d.seconds.toFixed(0),
+    }));
   state.duration ||= durationOpts[0].value;
 
   return {
