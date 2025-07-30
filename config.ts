@@ -16,7 +16,11 @@ export const config: Config = {
       canSelfApprove: true,
       maxSeconds: 3 * 86400, // 3 days.
       approverEmails: [
-        // Enter some email addresses here.
+        // Enter some email addresses here. If 10 or fewer users are specified,
+        // the requester will see a list of those users as radio buttons.
+        // When more than 10 users are specified, the requester will see a
+        // dropdown with *all users* of the Slack workspace, but only the
+        // specified users will be able to approve.
         "someone@example.com",
       ],
       // You can send announcements of approvals to a Slack channel.
