@@ -201,6 +201,59 @@ export default SlackFunction(
       } as SuggestionResponse;
     },
   )
+  .addBlockSuggestionHandler(
+    ACTION_APPROVER,
+    async (
+      { client, env, inputs, body },
+    ): Promise<SuggestionResponse> => {
+      // Get the configured approver emails for the requested profile
+      const query = body.value.trim().toLowerCase();
+
+      // Get the form state to determine which profile was selected
+      const state = formState(body.view.state);
+      const profile = config.profiles.find((p) => p.attribute === state.profile);
+
+      if (!profile?.approverEmails?.length) {
+        return { options: [] };
+      }
+
+      const approverEmails = profile.approverEmails;
+
+      // Look up users by email
+      const users = await Promise.all(
+        approverEmails.map((email) =>
+          client.users.lookupByEmail({ email }).catch(() => ({ ok: false, user: undefined }))
+        ),
+      );
+
+      // Filter to valid users
+      const validApprovers = users
+        .filter((u) => u.ok && u.user && !u.user.deleted)
+        .map((u) => u.user);
+
+      // Filter by query if provided
+      let filteredApprovers = validApprovers;
+      if (query) {
+        filteredApprovers = validApprovers.filter((user) => {
+          const name = user.profile?.real_name?.toLowerCase() || "";
+          const displayName = user.profile?.display_name?.toLowerCase() || "";
+          const email = user.profile?.email?.toLowerCase() || "";
+          return name.includes(query) || displayName.includes(query) || email.includes(query);
+        });
+      }
+
+      // Convert to suggestion options
+      const options = filteredApprovers.slice(0, 100).map((user) => ({
+        value: user.id + ":" + (user.profile?.email || ""),
+        text: {
+          type: "plain_text" as const,
+          text: `${user.profile?.real_name || user.name}${user.profile?.email ? ` (${user.profile.email})` : ""}`,
+        },
+      }));
+
+      return { options };
+    },
+  )
   .addViewSubmissionHandler(
     SUBMIT_ID,
     async ({ body, env, client, inputs }) => {
@@ -343,17 +396,22 @@ function formState(state: any): FormState {
 
       // Set the field from the inputs.
       const act = block[actionId];
+      let value;
       if (act["selected_option"]) {
-        s[actionId] = act.selected_option.value;
+        value = act.selected_option.value;
       }
       if (act["selected_user"]) {
-        s[actionId] = act.selected_user;
+        value = act.selected_user;
       }
       if (act["selected_users"]) {
-        s[actionId] = act.selected_users;
+        value = act.selected_users;
       }
       if ("value" in act) {
-        s[actionId] = act.value;
+        value = act.value;
+      }
+
+      if (value) {
+        s[actionId] = value;
       }
     }
   }
@@ -410,6 +468,106 @@ async function buildView(
     }));
   state.duration ||= durationOpts[0].value;
 
+  const blocks: any[] = [
+    {
+      block_id: "profile",
+      type: "input",
+      dispatch_action: true,
+      label: {
+        type: "plain_text",
+        emoji: true,
+        text: `:closed_lock_with_key: What do you want to access?`,
+      },
+      element: {
+        action_id: ACTION_PROFILE,
+        type: "static_select",
+        placeholder: {
+          type: "plain_text",
+          text: "Choose access...",
+        },
+        options: profileOpts,
+        initial_option: state.profile
+          ? profileOpts.find((p) => p.value === state.profile)
+          : undefined,
+      },
+    },
+    {
+      block_id: "device",
+      type: "input",
+      label: {
+        type: "plain_text",
+        emoji: true,
+        text: `:computer: Which device are you using?`,
+      },
+      element: {
+        action_id: ACTION_DEVICE,
+        type: "external_select",
+        placeholder: {
+          type: "plain_text",
+          text: "Choose device...",
+        },
+        min_query_length: 0,
+      },
+    },
+  ];
+
+  if (state.profile) {
+    blocks.push({
+      block_id: "duration",
+      type: "input",
+      label: {
+        type: "plain_text",
+        emoji: true,
+        text: ":stopwatch: For how long?",
+      },
+      element: {
+        action_id: ACTION_DURATION,
+        type: "static_select",
+        placeholder: {
+          type: "plain_text",
+          text: "Choose duration...",
+        },
+        options: durationOpts,
+        initial_option: durationOpts.find((d) => d.value === state.duration),
+      },
+    });
+
+    const approverBlocks = await buildApproverBlock(
+      client,
+      userId,
+      profile?.canSelfApprove,
+      profile?.approverEmails,
+    );
+
+    if (Array.isArray(approverBlocks)) {
+      blocks.push(...approverBlocks);
+    } else {
+      blocks.push(approverBlocks);
+    }
+
+    blocks.push({
+      block_id: "reason",
+      type: "input",
+      label: {
+        type: "plain_text",
+        emoji: true,
+        text: ":open_book: What do you need the access for?",
+      },
+      element: {
+        action_id: ACTION_REASON,
+        type: "plain_text_input",
+        // 80 is arbitrary here. If the final comment (that also includes
+        // requester and approver names) comes over the API limit of 200
+        // characters, we'll truncate it before sending the request.
+        max_length: 80,
+        placeholder: {
+          type: "plain_text",
+          text: "Enter reason...",
+        },
+      },
+    });
+  }
+
   return {
     type: "modal",
     callback_id: SUBMIT_ID,
@@ -417,7 +575,6 @@ async function buildView(
       type: "plain_text",
       text: "Requesting Access",
     },
-
     submit: {
       type: "plain_text",
       text: "Submit",
@@ -429,94 +586,7 @@ async function buildView(
     clear_on_close: true, // Do we want or not want this?
     notify_on_close: false, // Should we mark the function as completed/errored when the window is closed? If so, how do we complete the workflow?
     // submit_disabled: true, // Errors: Apparently only for "configuration modals" - "Configuration modals are used in Workflow Builder during the addition of Steps from Apps" but "We're retiring all Slack app functionality around Steps from Apps in September 2024."
-    blocks: [
-      {
-        block_id: "profile",
-        type: "input",
-        dispatch_action: true,
-        label: {
-          type: "plain_text",
-          emoji: true,
-          text: `:closed_lock_with_key: What do you want to access?`,
-        },
-        element: {
-          action_id: ACTION_PROFILE,
-          type: "static_select",
-          placeholder: {
-            type: "plain_text",
-            text: "Choose access...",
-          },
-          options: profileOpts,
-          initial_option: state.profile
-            ? profileOpts.find((p) => p.value === state.profile)
-            : undefined,
-        },
-      },
-      {
-        block_id: "device",
-        type: "input",
-        label: {
-          type: "plain_text",
-          emoji: true,
-          text: `:computer: Which device are you using?`,
-        },
-        element: {
-          action_id: ACTION_DEVICE,
-          type: "external_select",
-          placeholder: {
-            type: "plain_text",
-            text: "Choose device...",
-          },
-          min_query_length: 0,
-        },
-      },
-      state.profile && {
-        block_id: "duration",
-        type: "input",
-        label: {
-          type: "plain_text",
-          emoji: true,
-          text: ":stopwatch: For how long?",
-        },
-        element: {
-          action_id: ACTION_DURATION,
-          type: "static_select",
-          placeholder: {
-            type: "plain_text",
-            text: "Choose duration...",
-          },
-          options: durationOpts,
-          initial_option: durationOpts.find((d) => d.value === state.duration),
-        },
-      },
-      state.profile && await buildApproverBlock(
-        client,
-        userId,
-        profile?.canSelfApprove,
-        profile?.approverEmails,
-      ),
-      state.profile && {
-        block_id: "reason",
-        type: "input",
-        label: {
-          type: "plain_text",
-          emoji: true,
-          text: ":open_book: What do you need the access for?",
-        },
-        element: {
-          action_id: ACTION_REASON,
-          type: "plain_text_input",
-          // 80 is arbitrary here. If the final comment (that also includes
-          // requester and approver names) comes over the API limit of 200
-          // characters, we'll truncate it before sending the request.
-          max_length: 80,
-          placeholder: {
-            type: "plain_text",
-            text: "Enter reason...",
-          },
-        },
-      },
-    ].filter(Boolean),
+    blocks,
   };
 }
 
@@ -558,8 +628,8 @@ async function buildApproverBlock(
     };
   }
 
-  if (!emails?.length || emails.length > 10) {
-    // We can't use radio buttons for this.
+  if (!emails?.length) {
+    // No approvers configured - use users_select as fallback
     return {
       block_id: "approver",
       type: "input",
@@ -580,8 +650,7 @@ async function buildApproverBlock(
     };
   }
 
-  // We can't use the users_select with a specific set of users, but we can show
-  // up to 10 radio buttons.
+  // We can use radio buttons for up to 10 users
   const users = await Promise.all(
     emails.map((email) => client.users.lookupByEmail({ email })),
   );
@@ -593,12 +662,75 @@ async function buildApproverBlock(
   );
 
   // Warn about any users who could not be found by email.
-  const failedLooksup = users.map((u, i) =>
+  const failedLookups = users.map((u, i) =>
     u.ok && u.user && !u.user.deleted ? null : emails[i]
-  ).filter(
-    Boolean,
-  );
+  ).filter(Boolean);
 
+  if (!approvers.length) {
+    return {
+      block_id: "approver",
+      type: "input",
+      label: {
+        type: "plain_text",
+        emoji: true,
+        text: ":sleuth_or_spy: Who should approve?",
+      },
+      hint: failedLookups?.length ? {
+        type: "plain_text",
+        text: `Lookups failed for: ${failedLookups.join(", ")}`,
+      } : undefined,
+      element: {
+        action_id: ACTION_APPROVER,
+        type: "radio_buttons",
+        options: [{
+          value: "!",
+          text: {
+            type: "plain_text",
+            emoji: true,
+            text: ":warning: No reviewers could be found.",
+          },
+        }],
+      },
+    };
+  }
+
+  // If we have 10 or fewer approvers, use single radio button block
+  if (approvers.length <= 10) {
+    const radioOptions = approvers.map((u) => ({
+      value: u.user.id + ":" + (u.user.profile?.email || ""),
+      text: {
+        type: "mrkdwn",
+        text: `<@${u.user.id}> - ${u?.user?.profile?.real_name}${
+          userId == u.user.id ? " (You)" : ""
+        }`,
+      },
+      description: {
+        type: "plain_text",
+        text: "Local time: " + localTime(u.user.tz_offset),
+      },
+    }));
+
+    return {
+      block_id: "approver",
+      type: "input",
+      label: {
+        type: "plain_text",
+        emoji: true,
+        text: ":sleuth_or_spy: Who should approve?",
+      },
+      hint: failedLookups?.length ? {
+        type: "plain_text",
+        text: `Lookups failed for: ${failedLookups.join(", ")}`,
+      } : undefined,
+      element: {
+        action_id: ACTION_APPROVER,
+        type: "radio_buttons",
+        options: radioOptions,
+      },
+    };
+  }
+
+  // For more than 10 approvers, use external_select dropdown
   return {
     block_id: "approver",
     type: "input",
@@ -607,38 +739,19 @@ async function buildApproverBlock(
       emoji: true,
       text: ":sleuth_or_spy: Who should approve?",
     },
-    hint: failedLooksup?.length
-      ? {
-        type: "plain_text",
-        text: `Lookups failed for: ${failedLooksup.join(", ")}`,
-      }
-      : undefined,
+    hint: {
+      type: "plain_text",
+      text: `${approvers.length} approvers available${failedLookups?.length ? `. Lookups failed for: ${failedLookups.join(", ")}` : ""}.`,
+    },
     element: {
       action_id: ACTION_APPROVER,
-      type: "radio_buttons",
-      options: approvers.length
-        ? approvers.map((u) => ({
-          value: u.user.id + ":" + (u.user.profile?.email || ""),
-          text: {
-            type: "mrkdwn",
-            text: `<@${u.user.id}> - ${u?.user?.profile?.real_name}${
-              userId == u.user.id ? " (You)" : ""
-            }`,
-          },
-          description: {
-            type: "plain_text",
-            text: "Local time: " + localTime(u.user.tz_offset),
-          },
-        }))
-        : [{
-          // FIXME: What happens when we try to let the user do this?
-          value: "!",
-          text: {
-            type: "plain_text",
-            emoji: true,
-            text: ":warning: No reviewers could be found.",
-          },
-        }],
+      type: "external_select",
+      placeholder: {
+        type: "plain_text",
+        emoji: true,
+        text: "Choose an approver...",
+      },
+      min_query_length: 0,
     },
   };
 }
