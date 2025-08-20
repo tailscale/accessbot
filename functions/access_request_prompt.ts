@@ -204,7 +204,7 @@ export default SlackFunction(
   .addBlockSuggestionHandler(
     ACTION_APPROVER,
     async (
-      { client, env, inputs, body },
+      { client, body },
     ): Promise<SuggestionResponse> => {
       // Get the configured approver emails for the requested profile
       const query = body.value.trim().toLowerCase();
@@ -476,7 +476,7 @@ async function buildView(
     }));
   state.duration ||= durationOpts[0].value;
 
-  const blocks: any[] = [
+  const blocks: object[] = [
     {
       block_id: "profile",
       type: "input",
