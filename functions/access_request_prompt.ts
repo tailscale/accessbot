@@ -211,7 +211,9 @@ export default SlackFunction(
 
       // Get the form state to determine which profile was selected
       const state = formState(body.view.state);
-      const profile = config.profiles.find((p) => p.attribute === state.profile);
+      const profile = config.profiles.find((p) =>
+        p.attribute === state.profile
+      );
 
       if (!profile?.approverEmails?.length) {
         return { options: [] };
@@ -222,7 +224,10 @@ export default SlackFunction(
       // Look up users by email
       const users = await Promise.all(
         approverEmails.map((email) =>
-          client.users.lookupByEmail({ email }).catch(() => ({ ok: false, user: undefined }))
+          client.users.lookupByEmail({ email }).catch(() => ({
+            ok: false,
+            user: undefined,
+          }))
         ),
       );
 
@@ -238,7 +243,8 @@ export default SlackFunction(
           const name = user.profile?.real_name?.toLowerCase() || "";
           const displayName = user.profile?.display_name?.toLowerCase() || "";
           const email = user.profile?.email?.toLowerCase() || "";
-          return name.includes(query) || displayName.includes(query) || email.includes(query);
+          return name.includes(query) || displayName.includes(query) ||
+            email.includes(query);
         });
       }
 
@@ -247,7 +253,9 @@ export default SlackFunction(
         value: user.id + ":" + (user.profile?.email || ""),
         text: {
           type: "plain_text" as const,
-          text: `${user.profile?.real_name || user.name}${user.profile?.email ? ` (${user.profile.email})` : ""}`,
+          text: `${user.profile?.real_name || user.name}${
+            user.profile?.email ? ` (${user.profile.email})` : ""
+          }`,
         },
       }));
 
@@ -675,10 +683,12 @@ async function buildApproverBlock(
         emoji: true,
         text: ":sleuth_or_spy: Who should approve?",
       },
-      hint: failedLookups?.length ? {
-        type: "plain_text",
-        text: `Lookups failed for: ${failedLookups.join(", ")}`,
-      } : undefined,
+      hint: failedLookups?.length
+        ? {
+          type: "plain_text",
+          text: `Lookups failed for: ${failedLookups.join(", ")}`,
+        }
+        : undefined,
       element: {
         action_id: ACTION_APPROVER,
         type: "radio_buttons",
@@ -718,10 +728,12 @@ async function buildApproverBlock(
         emoji: true,
         text: ":sleuth_or_spy: Who should approve?",
       },
-      hint: failedLookups?.length ? {
-        type: "plain_text",
-        text: `Lookups failed for: ${failedLookups.join(", ")}`,
-      } : undefined,
+      hint: failedLookups?.length
+        ? {
+          type: "plain_text",
+          text: `Lookups failed for: ${failedLookups.join(", ")}`,
+        }
+        : undefined,
       element: {
         action_id: ACTION_APPROVER,
         type: "radio_buttons",
@@ -741,7 +753,11 @@ async function buildApproverBlock(
     },
     hint: {
       type: "plain_text",
-      text: `${approvers.length} approvers available${failedLookups?.length ? `. Lookups failed for: ${failedLookups.join(", ")}` : ""}.`,
+      text: `${approvers.length} approvers available${
+        failedLookups?.length
+          ? `. Lookups failed for: ${failedLookups.join(", ")}`
+          : ""
+      }.`,
     },
     element: {
       action_id: ACTION_APPROVER,
