@@ -25,6 +25,12 @@ export const ProfileType = DefineType({
         type: Schema.types.string,
       },
     },
+    approverGroupIds: {
+      type: Schema.types.array,
+      items: {
+        type: Schema.types.string,
+      },
+    },
     canSelfApprove: {
       type: Schema.types.boolean,
       default: false,
@@ -72,14 +78,18 @@ export const ApproverType = DefineType({
   name: "Approver",
   type: Schema.types.object,
   additionalProperties: false,
-  required: [
-    "userId",
-  ],
   properties: {
     "userId": {
       type: Schema.slack.types.user_id,
     },
     "email": {
+      type: Schema.types.string,
+    },
+    "groupId": {
+      // Slack does not expose a specific usergroup_id Schema type
+      type: Schema.types.string,
+    },
+    "groupHandle": {
       type: Schema.types.string,
     },
   },

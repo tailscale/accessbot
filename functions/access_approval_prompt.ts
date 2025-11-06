@@ -44,7 +44,7 @@ export default SlackFunction(
   async ({ env, inputs, client }) => {
     const { profile, requester, approver } = inputs.access;
 
-    if (requester === approver.userId && profile.confirmSelfApproval !== true) {
+    if (approver.userId && requester === approver.userId && profile.confirmSelfApproval !== true) {
       await approve(env, client, true, inputs.access);
       return {
         completed: true,
@@ -54,7 +54,16 @@ export default SlackFunction(
 
     // Create a block of Block Kit elements composed of several header blocks
     // plus the interactive approve/deny buttons at the end
-    const blocks = accessRequestHeaderBlocks(inputs.access).concat([{
+    const headerBlocks = accessRequestHeaderBlocks(inputs.access);
+    const approverContext = approver.groupId
+      ? [{
+        type: "context",
+        elements: [{ type: "mrkdwn", text: `Requested approver: <!subteam^${approver.groupId}>` }],
+      }]
+      : [];
+    const blocks = headerBlocks
+      .concat(approverContext)
+      .concat([{
       "type": "actions",
       "block_id": "approve-deny-buttons",
       "elements": [
@@ -79,10 +88,23 @@ export default SlackFunction(
       ],
     }]);
 
+    let targetChannel = approver.userId || "";
+    if (!approver.userId && approver.groupId) {
+      // For group approvers, we must post in a channel
+      if (!profile.notifyChannel) {
+        const msg = "A notifyChannel is required for group approvers.";
+        console.log(msg);
+        return { error: msg };
+      }
+      targetChannel = profile.notifyChannel;
+    }
+
     const msgResponse = await client.chat.postMessage({
-      channel: approver.userId,
+      channel: targetChannel,
       blocks,
-      text: "You have been asked to approve Tailscale access",
+      text: approver.groupId
+        ? `<!subteam^${approver.groupId}> You have been asked to approve Tailscale access`
+        : "You have been asked to approve Tailscale access",
     });
 
     if (!msgResponse.ok) {
@@ -102,9 +124,25 @@ export default SlackFunction(
   [APPROVE_ID, DENY_ID],
   // interactions with the above two action_ids get handled by the function below
   async function ({ action, env, inputs, body, client }) {
-    // Send the approval.
     const approved = action.action_id == APPROVE_ID;
-    await approve(env, client, approved, inputs.access);
+    const requester = inputs.access?.requester;
+    const actorUserId = body.user?.id;
+    const canSelfApprove = inputs.access?.profile?.canSelfApprove === true;
+
+    // Guard: block self-approval when not permitted
+    if (approved && actorUserId === requester && !canSelfApprove) {
+      try {
+        await client.chat.postEphemeral({
+          channel: body.container.channel_id,
+          user: actorUserId!,
+          text: "You cannot approve your own access for this profile.",
+        });
+      } catch (_) {}
+      return { error: "You cannot approve your own access for this profile." };
+    }
+
+    // Proceed with approval/denial
+    await approve(env, client, approved, inputs.access, actorUserId);
 
     // Update the approver's message.
     const msgUpdate = await client.chat.update({
@@ -144,6 +182,7 @@ async function approve(
   client: SlackAPIClient,
   approved: boolean,
   access: Access,
+  actorUserId?: string,
 ) {
   const { profile, requester, durationSeconds, device, reason, approver } =
     access;
@@ -156,9 +195,12 @@ async function approve(
   const requesterRes = client.users.info({ user: requester }).catch((
     err,
   ) => (console.error("Error loading requester user info:", err), undefined));
-  const approverRes = client.users.info({ user: approver.userId }).catch((
-    err,
-  ) => (console.error("Error loading approver user info:", err), undefined));
+  const approverInfoUserId = actorUserId || approver.userId;
+  const approverRes = approverInfoUserId
+    ? client.users.info({ user: approverInfoUserId }).catch((
+      err,
+    ) => (console.error("Error loading approver user info:", err), undefined))
+    : undefined;
 
   const msg = {
     blocks: [{
@@ -175,7 +217,7 @@ async function approve(
             }|${access.device.name || access.device.nodeId}>` +
             `${reason ? ` for "${reason}"` : ""} was ${
               approved ? " :white_check_mark: Approved" : ":x: Denied"
-            } by <@${approver.userId}> until ` +
+            } by ${approverInfoUserId ? `<@${approverInfoUserId}>` : (approver.groupId ? `<!subteam^${approver.groupId}>` : "an approver")} until ` +
             new Date(Date.now() + durationSeconds * 1000).toISOString(),
         },
       ],
@@ -194,16 +236,18 @@ async function approve(
       ),
     );
   } catch (e) {
-    console.error(e.message);
-    return { error: e.message };
+    const errMsg = e instanceof Error ? e.message : String(e);
+    console.error(errMsg);
+    return { error: errMsg };
   }
 
   // Update Tailscale with the new attr request.
   if (approved) {
+    const approverRefText = (await approverRes) ? userref(await approverRes) : (access.approver.groupId ? `group:${access.approver.groupId}` : "");
     let comment =
       `Tailscale Access Slackbot: request from ${
         userref(await requesterRes)
-      } approved by ${userref(await approverRes)}` +
+      } approved by ${approverRefText}` +
       (reason ? `\nReason: ${reason}` : "");
     if (comment.length > 200) {
       comment = comment.slice(0, 200);

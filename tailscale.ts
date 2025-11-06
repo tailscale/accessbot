@@ -31,15 +31,25 @@ export default function tailscale(
       return null;
     })
     .then((tokRes) => {
-      // Try to retrieve a token, but not too hard.
-      const tok = tokRes && tokRes.ok && tokRes.item.access_token
+      // Load any previously stored access token but intentionally ignore
+      // any persisted refresh token. Tailscale's client_credentials flow
+      // does not issue refresh tokens, and attempting to refresh can 401.
+      const cachedTok: OAuth2Token | undefined = (tokRes && tokRes.ok && tokRes.item.access_token)
         ? {
           accessToken: tokRes.item.access_token,
-          refreshToken: tokRes.item.refresh_token,
+          // DO NOT pass refreshToken to avoid refresh flow
+          refreshToken: null,
           expiresAt: tokRes.item.expires_at
             ? tokRes.item.expires_at * 1000
-            : undefined,
-        } as OAuth2Token
+            : null,
+        }
+        : undefined;
+
+      // Only seed a cached token if it's still valid for a short buffer.
+      const now = Date.now();
+      const safetyWindowMs = 30_000; // 30s
+      const tok = (cachedTok && cachedTok.expiresAt && cachedTok.expiresAt > now + safetyWindowMs)
+        ? cachedTok
         : undefined;
 
       // Always generate an OAuth2 client for making requests.
@@ -50,15 +60,17 @@ export default function tailscale(
           tokenEndpoint: "https://api.tailscale.com/api/v2/oauth/token",
           clientId: clientId,
           clientSecret: clientSecret,
+          // Be explicit about scopes for clarity/consistency
+          scope: ["devices:core:read", "devices:posture_attributes"],
 
           onTokenUpdate: function (token: OAuth2Token) {
-            // Persist updated tokensin the data store.
+            // Persist updated tokens in the data store.
             client.apps.datastore.put<AccessToken>({
               datastore: TailscaleTokenStore.name,
               item: {
                 client_id: clientId,
                 access_token: token.accessToken,
-                refresh_token: token.refreshToken,
+                // Intentionally omit refresh_token (not provided for client_credentials)
                 expires_at: token.expiresAt
                   ? token.expiresAt / 1000
                   : undefined,
