@@ -36,7 +36,8 @@ export default Manifest({
   botScopes: [
     "commands",
     "users:read", // look up user profile.
-    "users:read.email", // look up user email address.
+    "users:read.email", // look up user email address.                                                                                                  │
+    "usergroups:read", // look up user group members.
     "chat:write",
     "chat:write.public",
     "datastore:read",

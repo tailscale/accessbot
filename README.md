@@ -163,6 +163,38 @@ export const config: Config = {
 See the `type Profile` declaration at the bottom of config.ts for a description
 of the different fields available in this config.
 
+### Slack user group approvers
+
+In addition to listing individual approver emails, you can allow members of specific
+Slack user groups to approve by setting `approverGroupIds` on a profile.
+
+Example snippet:
+
+```typescript
+export const config: Config = {
+  profiles: [
+    {
+      attribute: "custom:prodAccess",
+      description: "Production",
+      notifyChannel: "C06TH49GKHC",
+      canSelfApprove: false,
+      approverEmails: [
+        "alice@example.com",
+        "bob@example.com",
+        "charlie@example.com",
+      ],
+      approverGroupIds: ["S01234567"],
+      notifyChannel: "C01234567", // required for group approvers
+    },
+  ],
+} as Config;
+```
+
+- Behavior:
+  - When a group approver is used, the approval prompt is posted to `notifyChannel`.
+  - Any member of the configured group can click Approve/Deny.
+  - Requesters cannot approve their own requests when `canSelfApprove` is false;
+
 After changing config.ts, you must run another `slack deploy` to see the config
 update in the app. It is recommended that you `git commit` and `git push` at
 this point too.

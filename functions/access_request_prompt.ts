@@ -126,14 +126,15 @@ export default SlackFunction(
           );
         }
       } catch (e) {
-        console.error("Error loading devices", e);
+        const errMsg = e instanceof Error ? e.message : String(e);
+        console.error("Error loading devices", errMsg);
         return {
           options: [{
             value: "!",
             text: {
               type: "plain_text",
               emoji: true,
-              text: `:warning: Error retreiving devices: ${e.message}`,
+              text: `:warning: Error retreiving devices: ${errMsg}`,
             },
           }],
         };
@@ -215,11 +216,13 @@ export default SlackFunction(
         p.attribute === state.profile
       );
 
-      if (!profile?.approverEmails?.length) {
+      if (!profile?.approverEmails?.length && !profile?.approverGroupIds?.length) {
         return { options: [] };
       }
 
-      const approverEmails = profile.approverEmails;
+      const approverEmails = profile.approverEmails || [];
+      const approverGroupIds = profile.approverGroupIds;
+      console.log("approver suggestions: inputs", { query, approverEmails, approverGroupIds });
 
       // Look up users by email
       const users = await Promise.all(
@@ -230,6 +233,9 @@ export default SlackFunction(
           }))
         ),
       );
+      try {
+        console.log("approver suggestions: user lookups", users.map((u) => ({ ok: (u as any).ok, id: (u as any).user?.id, deleted: (u as any).user?.deleted })));
+      } catch (_) {}
 
       // Filter to valid users
       const validApprovers = users
@@ -248,16 +254,45 @@ export default SlackFunction(
         });
       }
 
+      // Resolve user group metadata without expanding members
+      const groupsListRes = await client.usergroups.list({}).catch(() => ({ ok: false }));
+      // deno-lint-ignore no-explicit-any
+      const allGroups: any[] = (groupsListRes as any)?.usergroups || [];
+      // deno-lint-ignore no-explicit-any
+      const approverGroups = (allGroups || []).filter((g: any) => (approverGroupIds || []).includes(g.id));
+      try {
+        console.log("approver suggestions: usergroups.list", { ok: (groupsListRes as any)?.ok, count: allGroups.length });
+        console.log("approver suggestions: approverGroups", approverGroups.map((g: any) => ({ id: g.id, handle: g.handle })));
+      } catch (_) {}
+
+      // Filter by query if provided
+      let filteredApproverGroups = approverGroups;
+      if (query) {
+        filteredApproverGroups = approverGroups.filter((group) =>
+          group.name.toLowerCase().includes(query) ||
+          group.handle.toLowerCase().includes(query)
+        );
+      }
+
       // Convert to suggestion options
-      const options = filteredApprovers.slice(0, 100).map((user) => ({
-        value: user.id + ":" + (user.profile?.email || ""),
-        text: {
-          type: "plain_text" as const,
-          text: `${user.profile?.real_name || user.name}${
-            user.profile?.email ? ` (${user.profile.email})` : ""
-          }`,
-        },
-      }));
+      const options = [
+        ...filteredApprovers.slice(0, 100).map((user) => ({
+          value: user.id + ":" + (user.profile?.email || ""),
+          text: {
+            type: "plain_text" as const,
+            text: `${user.profile?.real_name || user.name}${
+              user.profile?.email ? ` (${user.profile.email})` : ""
+            }`,
+          },
+        })),
+        ...filteredApproverGroups.slice(0, 100).map((group) => ({
+          value: "group:" + group.id,
+          text: {
+            type: "plain_text" as const,
+            text: `@${group.handle || group.name}`,
+          },
+        })),
+      ];
 
       return { options };
     },
@@ -284,44 +319,55 @@ export default SlackFunction(
       }
 
       // Validate the approver.
-      let [approverId, approverEmail] = (s.approver || "").split(":", 2);
-      if (!approverId) {
+      const selectedApprover = s.approver || "";
+      let approverId = "";
+      let approverEmail = "";
+      let approverGroupId = "";
+      if (selectedApprover.startsWith("group:")) {
+        approverGroupId = selectedApprover.slice("group:".length);
+      } else {
+        [approverId, approverEmail] = selectedApprover.split(":", 2);
+      }
+
+      if (!approverId && !approverGroupId) {
         errors[ACTION_APPROVER] = "An approver is required to confirm access.";
       } else if (profile) {
-        if (!profile.canSelfApprove && approverId === inputs.user) {
+        if (approverId && !profile.canSelfApprove && approverId === inputs.user) {
           errors[ACTION_APPROVER] ||= `You cannot approve your own access to ${
             profile?.description || "this profile"
           }.`;
         }
-        // If the user was presented with a user_select to choose the approver,
-        // then we didn't pass through the email address in the value, so load it.
-        if (!approverEmail) {
-          try {
-            const r = await client.users.info({ user: approverId });
-            approverEmail = r.user?.profile?.email || "";
-            if (r.error) {
-              errors[ACTION_APPROVER] ||= "Error loading approver email: " +
-                r.error;
+        if (approverId) {
+          // If the user was presented with a user_select to choose the approver,
+          // then we didn't pass through the email address in the value, so load it.
+          if (!approverEmail) {
+            try {
+              const r = await client.users.info({ user: approverId });
+              approverEmail = r.user?.profile?.email || "";
+              if (r.error) {
+                errors[ACTION_APPROVER] ||= "Error loading approver email: " +
+                  r.error;
+              }
+            } catch (e) {
+              errors[ACTION_APPROVER] ||= "Error loading approver email: " + e;
             }
-          } catch (e) {
-            errors[ACTION_APPROVER] ||= "Error loading approver email: " + e;
           }
-        }
-        // Validate the approver is allowed by the profile configuration.
-        approverEmail = approverEmail.trim().toLowerCase();
-        console.log({
-          approverId,
-          approverEmail,
-          allowed: profile.approverEmails,
-        });
-        if (
-          profile.approverEmails?.length &&
-          !profile.approverEmails.some((e) =>
-            e.trim().toLowerCase() == approverEmail
-          )
-        ) {
-          errors[ACTION_APPROVER] ||=
-            `The user you selected cannot approve access to ${profile.description}.`;
+          // Validate the approver is allowed by the profile configuration.
+          approverEmail = approverEmail.trim().toLowerCase();
+          if (
+            profile.approverEmails?.length &&
+            !profile.approverEmails.some((e) =>
+              e.trim().toLowerCase() == approverEmail
+            )
+          ) {
+            errors[ACTION_APPROVER] ||=
+              `The user you selected cannot approve access to ${profile.description}.`;
+          }
+        } else if (approverGroupId) {
+          // Validate the selected group is configured
+          if (!profile.approverGroupIds?.includes(approverGroupId)) {
+            errors[ACTION_APPROVER] ||= `The group you selected cannot approve access to ${profile.description}.`;
+          }
         }
       }
 
@@ -353,10 +399,9 @@ export default SlackFunction(
         access: {
           requester: inputs.user,
           profile: profile!,
-          approver: {
-            userId: approverId,
-            email: approverEmail,
-          },
+          approver: approverGroupId
+            ? { groupId: approverGroupId }
+            : { userId: approverId, email: approverEmail },
           device: {
             nodeId: s.device!,
             name: device?.name || undefined,
@@ -545,6 +590,7 @@ async function buildView(
       userId,
       profile?.canSelfApprove,
       profile?.approverEmails,
+      profile?.approverGroupIds,
     );
 
     if (Array.isArray(approverBlocks)) {
@@ -603,8 +649,9 @@ async function buildApproverBlock(
   userId?: string,
   canSelfApprove?: boolean,
   emails?: string[],
+  groupIds?: string[],
 ) {
-  if (!emails?.length && canSelfApprove) {
+  if (!emails?.length && !groupIds?.length && canSelfApprove) {
     return {
       block_id: "approver",
       type: "input",
@@ -636,7 +683,7 @@ async function buildApproverBlock(
     };
   }
 
-  if (!emails?.length) {
+  if (!emails?.length && !groupIds?.length) {
     // No approvers configured - use users_select as fallback
     return {
       block_id: "approver",
@@ -660,21 +707,33 @@ async function buildApproverBlock(
 
   // We can use radio buttons for up to 10 users
   const users = await Promise.all(
-    emails.map((email) => client.users.lookupByEmail({ email })),
+    (emails || []).map((email) => client.users.lookupByEmail({ email })),
   );
 
   // Filter the list of approvers to successful responses.
   const approvers = users.filter((u) =>
     u.ok && u.user && !u.user.deleted &&
-    (canSelfApprove || emails.length == 1 || u.user.id != userId)
+    (canSelfApprove || (emails?.length || 0) == 1 || u.user.id != userId)
   );
 
   // Warn about any users who could not be found by email.
   const failedLookups = users.map((u, i) =>
-    u.ok && u.user && !u.user.deleted ? null : emails[i]
+    u.ok && u.user && !u.user.deleted ? null : (emails || [])[i]
   ).filter(Boolean);
 
-  if (!approvers.length) {
+  // Resolve user group metadata without expanding members
+  console.log("buildApproverBlock: resolving user groups", { groupIds });
+  const groupsListRes = await client.usergroups.list({}).catch(() => ({ ok: false }));
+  // deno-lint-ignore no-explicit-any
+  const allGroups: any[] = (groupsListRes as any)?.usergroups || [];
+  try {
+    console.log("buildApproverBlock: usergroups.list", { ok: (groupsListRes as any)?.ok, count: allGroups.length });
+  } catch (_) {}
+  // deno-lint-ignore no-explicit-any
+  const approverGroups = (allGroups || []).filter((g: any) => (groupIds || []).includes(g.id));
+  console.log("buildApproverBlock: approverGroups", approverGroups.map((g: any) => ({ id: g.id, handle: g.handle })));
+
+  if (!approvers.length && !approverGroups.length) {
     return {
       block_id: "approver",
       type: "input",
@@ -704,21 +763,33 @@ async function buildApproverBlock(
     };
   }
 
-  // If we have 10 or fewer approvers, use single radio button block
-  if (approvers.length <= 10) {
-    const radioOptions = approvers.map((u) => ({
-      value: u.user.id + ":" + (u.user.profile?.email || ""),
-      text: {
-        type: "mrkdwn",
-        text: `<@${u.user.id}> - ${u?.user?.profile?.real_name}${
-          userId == u.user.id ? " (You)" : ""
-        }`,
-      },
-      description: {
-        type: "plain_text",
-        text: "Local time: " + localTime(u.user.tz_offset),
-      },
-    }));
+  // If we have 10 or fewer total options, use single radio button block
+  const totalOptions = approvers.length + approverGroups.length;
+  console.log("buildApproverBlock: totalOptions", { users: approvers.length, groups: approverGroups.length, total: totalOptions });
+  if (totalOptions <= 10) {
+    const radioOptions = [
+      ...approvers.map((u) => ({
+        value: u.user.id + ":" + (u.user.profile?.email || ""),
+        text: {
+          type: "mrkdwn",
+          text: `<@${u.user.id}> - ${u?.user?.profile?.real_name}${
+            userId == u.user.id ? " (You)" : ""
+          }`,
+        },
+        description: {
+          type: "plain_text",
+          text: "Local time: " + localTime(u.user.tz_offset),
+        },
+      })),
+      // deno-lint-ignore no-explicit-any
+      ...approverGroups.map((g: any) => ({
+        value: "group:" + g.id,
+        text: {
+          type: "plain_text",
+          text: `@${g.handle || g.name}`,
+        },
+      })),
+    ];
 
     return {
       block_id: "approver",
@@ -753,7 +824,7 @@ async function buildApproverBlock(
     },
     hint: {
       type: "plain_text",
-      text: `${approvers.length} approvers available${
+      text: `${approvers.length + approverGroups.length} approvers available${
         failedLookups?.length
           ? `. Lookups failed for: ${failedLookups.join(", ")}`
           : ""

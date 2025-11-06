@@ -23,11 +23,17 @@ export const config: Config = {
         // specified users will be able to approve.
         "someone@example.com",
       ],
+      approverGroupIds: [
+        // Slack user group IDs whose members can approve access requests.
+        // Note: When using group approvers, the approval prompt is posted to
+        // the configured notifyChannel; ensure notifyChannel is set below.
+        // "S09R69FGD1A"
+      ],
       // You can send announcements of approvals to a Slack channel.
       // Navigate to the channel in Slack, then click the channel name above the
       // chat and in the window that opens, select the About tab. The channel ID
       // is available at the bottom of this window.
-      // notifyChannel: "C06TH49GKHC",
+      //notifyChannel: "C06TH49GKHC",
     },
   ],
 };
@@ -70,6 +76,13 @@ export type Profile = {
    * @default undefined (meaning anybody can approve)
    */
   approverEmails?: string[];
+
+  /**
+   * Slack user group IDs whose members may approve an access request.
+   * @example ["S02F0JV00QJ"]
+   * @default undefined (meaning anybody can approve)
+   */
+  approverGroupIds?: string[];
 
   /**
    * Whether a user can mark themselves as the approver for a request.
