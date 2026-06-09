@@ -1,0 +1,49 @@
+name: Deploy accessbot
+
+# Deploys the Tailscale JIT accessbot (Slack next-gen platform / Deno app) to
+# Slack-managed infrastructure via the Slack CLI on merge to main.
+#
+# Required repo secret:
+#   SLACK_SERVICE_TOKEN  - long-lived xoxp- service token from `slack auth token`
+#                          (see DESK-6020). Generated once by a workspace admin.
+#
+# App runtime env vars (TAILSCALE_CLIENT_ID / TAILSCALE_CLIENT_SECRET — the
+# accessbot OAuth client with devices:core:read + devices:posture_attributes)
+# are NOT set here. They're set once on the deployed app and persist:
+#   slack env add TAILSCALE_CLIENT_ID <id> --token <SLACK_SERVICE_TOKEN>
+#   slack env add TAILSCALE_CLIENT_SECRET <secret> --token <SLACK_SERVICE_TOKEN>
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never run two deploys to the same app concurrently.
+concurrency:
+  group: deploy-accessbot
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The app is Deno-based; the Slack CLI runs Deno hooks (slack.json) during
+      # deploy, so Deno must be on PATH.
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      # slackapi/slack-github-action@v3 installs the Slack CLI and runs the
+      # given command (the "slack" prefix is implicit). --force skips the
+      # interactive confirmation. v3 requires the Node 24 runtime (ubuntu-latest
+      # provides it).
+      - name: Deploy to Slack
+        uses: slackapi/slack-github-action/cli@v3.0.0
+        with:
+          token: ${{ secrets.SLACK_SERVICE_TOKEN }}
+          command: deploy --force
