@@ -127,13 +127,14 @@ export default SlackFunction(
         }
       } catch (e) {
         console.error("Error loading devices", e);
+        const msg = e instanceof Error ? e.message : String(e);
         return {
           options: [{
             value: "!",
             text: {
               type: "plain_text",
               emoji: true,
-              text: `:warning: Error retreiving devices: ${e.message}`,
+              text: `:warning: Error retreiving devices: ${msg}`,
             },
           }],
         };
