@@ -194,8 +194,9 @@ async function approve(
       ),
     );
   } catch (e) {
-    console.error(e.message);
-    return { error: e.message };
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(msg);
+    return { error: msg };
   }
 
   // Update Tailscale with the new attr request.
